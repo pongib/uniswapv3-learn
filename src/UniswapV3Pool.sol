@@ -5,12 +5,16 @@ import "./interfaces/IERC20.sol";
 import "./interfaces/IUniswapV3MintCallback.sol";
 import "./interfaces/IUniswapV3SwapCallback.sol";
 
+import "./lib/Math.sol";
+import "./lib/SwapMath.sol";
 import "./lib/Position.sol";
 import "./lib/Tick.sol";
-import "./lib/Math.sol";
+import "./lib/TickMath.sol";
+import "./lib/TickBitmap.sol";
 
 contract UniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
+    using TickBitmap for mapping(int16 => uint256);
     using Position for mapping(bytes32 => Position.Info);
     using Position for Position.Info;
 
@@ -52,6 +56,7 @@ contract UniswapV3Pool {
     uint128 public liquidity;
 
     mapping(int24 => Tick.Info) public ticks;
+    mapping(int16 => uint256) public tickBitmap;
     mapping(bytes32 => Position.Info) public positions;
 
     // ERROR
@@ -128,12 +133,12 @@ contract UniswapV3Pool {
         Slot0 memory slot0_ = slot0;
 
         amount0 = Math.calcAmount0Delta(
-            slot0_.sqrtPriceX96,
+            TickMath.getSqrtRatioAtTick(slot0_.tick),
             TickMath.getSqrtRatioAtTick(upperTick),
             amount
         );
         amount1 = Math.calcAmount1Delta(
-            slot0_.sqrtPriceX96,
+            TickMath.getSqrtRatioAtTick(slot0_.tick),
             TickMath.getSqrtRatioAtTick(lowerTick),
             amount
         );
@@ -195,6 +200,7 @@ contract UniswapV3Pool {
             );
 
             step.sqrtPriceNextX96 = TickMath.getSqrtRatioAtTick(step.nextTick);
+
             (state.sqrtPriceX96, step.amountIn, step.amountOut) = SwapMath
                 .computeSwapStep(
                     state.sqrtPriceX96,
@@ -256,7 +262,6 @@ contract UniswapV3Pool {
             liquidity,
             slot0.tick
         );
-        // -----
     }
 
     function balance0() internal returns (uint256 balance) {

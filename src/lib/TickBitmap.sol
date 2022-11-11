@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
+import "./BitMath.sol";
+
 library TickBitmap {
     error TickNotSpaced();
 
@@ -22,7 +24,8 @@ library TickBitmap {
         if (tick % tickSpacing != 0) revert TickNotSpaced();
         (int16 wordPosition, uint8 bitPosition) = position(tick / tickSpacing);
         uint256 mask = 1 << bitPosition;
-        self[wordPosition] = self[wordPosition] ^ mask;
+        // self[wordPosition] = self[wordPosition] ^ mask;
+        self[wordPosition] ^= mask;
     }
 
     function nextInitializedTickWithinOneWord(
@@ -32,6 +35,9 @@ library TickBitmap {
         bool lte
     ) internal view returns (int24 next, bool initialized) {
         int24 compressed = tick / tickSpacing;
+        // round towards negative infinity
+        if (tick < 0 && tick % tickSpacing != 0) compressed--;
+
         if (lte) {
             (int16 wordPosition, uint8 bitPosition) = position(compressed);
             uint256 mask = (1 << bitPosition) - 1 + (1 << bitPosition);
