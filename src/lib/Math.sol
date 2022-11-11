@@ -108,4 +108,29 @@ library Math {
             sqrtPriceX96 +
             uint160((amountIn << FixedPoint96.RESOLUTION) / liquidity);
     }
+
+    function mulDivRoundingUp(
+        uint256 a,
+        uint256 b,
+        uint256 denominator
+    ) internal pure returns (uint256 result) {
+        result = PRBMath.mulDiv(a, b, denominator);
+        if (mulmod(a, b, denominator) > 0) {
+            require(result < type(uint256).max);
+            result++;
+        }
+    }
+
+    function divRoundingUp(uint256 numerator, uint256 denominator)
+        internal
+        pure
+        returns (uint256 result)
+    {
+        assembly {
+            result := add(
+                div(numerator, denominator),
+                gt(mod(numerator, denominator), 0)
+            )
+        }
+    }
 }
