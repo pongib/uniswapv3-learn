@@ -64,6 +64,7 @@ contract UniswapV3Pool {
     error ZeroLiquidity();
     error InsufficientInputAmount();
     error NotEnoughLiquidity();
+    error InvalidPriceLimit();
 
     event Mint(
         address sender,
@@ -134,13 +135,14 @@ contract UniswapV3Pool {
         Slot0 memory slot0_ = slot0;
 
         if (slot0_.tick < lowerTick) {
+            // right side remain only token x, example only ETH.
             amount0 = Math.calcAmount0Delta(
                 TickMath.getSqrtRatioAtTick(lowerTick),
                 TickMath.getSqrtRatioAtTick(upperTick),
                 amount
             );
         } else if (slot0_.tick > lowerTick && slot0_.tick < upperTick) {
-            // in range
+            // in range need to add token x and token y
             amount0 = Math.calcAmount0Delta(
                 TickMath.getSqrtRatioAtTick(slot0_.tick),
                 TickMath.getSqrtRatioAtTick(upperTick),
@@ -154,6 +156,7 @@ contract UniswapV3Pool {
 
             liquidity = LiquidityMath.addLiquidity(liquidity, int128(amount));
         } else if (slot0_.tick > upperTick) {
+            // left side remain only y token, example only USDC.
             amount1 = Math.calcAmount1Delta(
                 TickMath.getSqrtRatioAtTick(lowerTick),
                 TickMath.getSqrtRatioAtTick(upperTick),
@@ -193,9 +196,18 @@ contract UniswapV3Pool {
         address recipient,
         bool zeroForOne,
         uint256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
         bytes calldata data
     ) public returns (int256 amount0, int256 amount1) {
         Slot0 memory slot0_ = slot0;
+
+        if (
+            zeroForOne
+                ? sqrtPriceLimitX96 > slot0_.sqrtPriceX96 ||
+                    sqrtPriceLimitX96 < TickMath.MIN_SQRT_RATIO
+                : sqrtPriceLimitX96 < slot0_.sqrtPriceX96 &&
+                    sqrtPriceLimitX96 > TickMath.MAX_SQRT_RATIO
+        ) revert InvalidPriceLimit();
 
         SwapState memory state = SwapState({
             amountSpecifiedRemaining: amountSpecified,
@@ -204,7 +216,13 @@ contract UniswapV3Pool {
             tick: slot0_.tick
         });
 
-        while (state.amountSpecifiedRemaining > 0) {
+        // pools don’t fail when slippage tolerance gets hit
+        // it will handled in compute swap params
+        // and simply executes swap partially, not exceed sqrtPriceLimitX96.
+        while (
+            state.amountSpecifiedRemaining > 0 &&
+            state.sqrtPriceX96 != sqrtPriceLimitX96
+        ) {
             StepState memory step;
 
             step.sqrtPriceStartX96 = state.sqrtPriceX96;
@@ -220,7 +238,16 @@ contract UniswapV3Pool {
             (state.sqrtPriceX96, step.amountIn, step.amountOut) = SwapMath
                 .computeSwapStep(
                     state.sqrtPriceX96,
-                    step.sqrtPriceNextX96,
+                    // check swap direction first
+                    // then if exceed sqrtPrice limit just send sqrtPrice limit as next sqrtPrice
+                    // so it will result in partial swap amount.
+                    (
+                        zeroForOne
+                            ? step.sqrtPriceNextX96 < sqrtPriceLimitX96
+                            : step.sqrtPriceNextX96 > sqrtPriceLimitX96
+                    )
+                        ? sqrtPriceLimitX96
+                        : step.sqrtPriceNextX96,
                     liquidity,
                     state.amountSpecifiedRemaining
                 );
