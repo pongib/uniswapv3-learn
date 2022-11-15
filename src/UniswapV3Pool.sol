@@ -63,6 +63,7 @@ contract UniswapV3Pool {
     error InvalidTickRange();
     error ZeroLiquidity();
     error InsufficientInputAmount();
+    error NotEnoughLiquidity();
 
     event Mint(
         address sender,
@@ -132,18 +133,33 @@ contract UniswapV3Pool {
 
         Slot0 memory slot0_ = slot0;
 
-        amount0 = Math.calcAmount0Delta(
-            TickMath.getSqrtRatioAtTick(slot0_.tick),
-            TickMath.getSqrtRatioAtTick(upperTick),
-            amount
-        );
-        amount1 = Math.calcAmount1Delta(
-            TickMath.getSqrtRatioAtTick(slot0_.tick),
-            TickMath.getSqrtRatioAtTick(lowerTick),
-            amount
-        );
+        if (slot0_.tick < lowerTick) {
+            amount0 = Math.calcAmount0Delta(
+                TickMath.getSqrtRatioAtTick(lowerTick),
+                TickMath.getSqrtRatioAtTick(upperTick),
+                amount
+            );
+        } else if (slot0_.tick > lowerTick && slot0_.tick < upperTick) {
+            // in range
+            amount0 = Math.calcAmount0Delta(
+                TickMath.getSqrtRatioAtTick(slot0_.tick),
+                TickMath.getSqrtRatioAtTick(upperTick),
+                amount
+            );
+            amount1 = Math.calcAmount1Delta(
+                TickMath.getSqrtRatioAtTick(slot0_.tick),
+                TickMath.getSqrtRatioAtTick(lowerTick),
+                amount
+            );
 
-        liquidity += uint128(amount);
+            liquidity = LiquidityMath.addLiquidity(liquidity, int128(amount));
+        } else if (slot0_.tick > upperTick) {
+            amount1 = Math.calcAmount1Delta(
+                TickMath.getSqrtRatioAtTick(lowerTick),
+                TickMath.getSqrtRatioAtTick(upperTick),
+                amount
+            );
+        }
 
         uint256 balance0Before;
         uint256 balance1Before;
@@ -211,8 +227,26 @@ contract UniswapV3Pool {
 
             state.amountSpecifiedRemaining -= step.amountIn;
             state.amountCalculated += step.amountOut;
-            state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+
+            if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
+                int128 liquidityDelta = ticks.cross(step.nextTick);
+
+                if (zeroForOne) liquidityDelta = -liquidityDelta;
+
+                state.liquidity = LiquidityMath.addLiquidity(
+                    state.liquidity,
+                    liquidityDelta
+                );
+
+                if (state.liquidity == 0) revert NotEnoughLiquidity();
+
+                state.tick = zeroForOne ? step.nextTick - 1 : step.nextTick;
+            } else {
+                state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
+            }
         }
+
+        if (liquidity != state.liquidity) liquidity = state.liquidity;
 
         if (state.tick != slot0_.tick) {
             (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
