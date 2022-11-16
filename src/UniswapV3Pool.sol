@@ -86,6 +86,8 @@ contract UniswapV3Pool {
         int24 tick
     );
 
+    event Flash(address indexed sender, int256 amount0, int256 amount1);
+
     constructor(
         address token0_,
         address token1_,
@@ -323,6 +325,25 @@ contract UniswapV3Pool {
             liquidity,
             slot0.tick
         );
+    }
+
+    function flash(
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata data
+    ) public {
+        uint256 balance0Before = balance0();
+        uint256 balance1Before = balance1();
+
+        if (amount0 > 0) IERC20(token0).transfer(msg.sender, amount0);
+        if (amount1 > 0) IERC20(token1).transfer(msg.sender, amount1);
+
+        IUniswapV3FlashCallback(msg.sender).uniswapV3FlashCallback(data);
+
+        require(balance0() >= balance0Before);
+        require(balance1() >= balance1Before);
+
+        emit Flash(msg.sender, amount0, amount1);
     }
 
     function balance0() internal returns (uint256 balance) {
