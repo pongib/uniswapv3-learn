@@ -2,21 +2,14 @@
 
 pragma solidity ^0.8.17;
 
-import "./UniswapV3Pool.sol";
+import "./lib/LiquidityMath.sol";
+import "./lib/TickMath.sol";
+
 import "./interfaces/IERC20.sol";
 import "./interfaces/IUniswapV3Pool.sol";
+import "./interfaces/IUniswapV3Manager.sol";
 
-contract UniswapV3Manager {
-    struct MintParams {
-        address poolAddress;
-        int24 lowerTick;
-        int24 upperTick;
-        uint256 amount0Desired;
-        uint256 amount1Desired;
-        uint256 amount0Min;
-        uint256 amount1Min;
-    }
-
+contract UniswapV3Manager is IUniswapV3Manager {
     error SlippageCheckFailed(uint256 amount0, uint256 amount1);
 
     function mint(MintParams calldata params)
@@ -65,13 +58,21 @@ contract UniswapV3Manager {
         address poolAddress_,
         bool zeroForOne,
         uint256 amountSpecified,
+        uint160 sqrtPriceLimitX96,
         bytes calldata data
     ) public returns (int256, int256) {
         return
-            UniswapV3Pool(poolAddress_).swap(
+            IUniswapV3Pool(poolAddress_).swap(
                 msg.sender,
                 zeroForOne,
                 amountSpecified,
+                sqrtPriceLimitX96 == 0
+                    ? (
+                        zeroForOne
+                            ? TickMath.MIN_SQRT_RATIO + 1
+                            : TickMath.MAX_SQRT_RATIO - 1
+                    )
+                    : sqrtPriceLimitX96,
                 data
             );
     }
@@ -81,9 +82,9 @@ contract UniswapV3Manager {
         uint256 amount1,
         bytes calldata data
     ) public {
-        UniswapV3Pool.CallbackData memory extra = abi.decode(
+        IUniswapV3Pool.CallbackData memory extra = abi.decode(
             data,
-            (UniswapV3Pool.CallbackData)
+            (IUniswapV3Pool.CallbackData)
         );
 
         IERC20(extra.token0).transferFrom(extra.payer, msg.sender, amount0);
@@ -95,9 +96,9 @@ contract UniswapV3Manager {
         int256 amount1,
         bytes calldata data
     ) public {
-        UniswapV3Pool.CallbackData memory extra = abi.decode(
+        IUniswapV3Pool.CallbackData memory extra = abi.decode(
             data,
-            (UniswapV3Pool.CallbackData)
+            (IUniswapV3Pool.CallbackData)
         );
         // need to cast back to uint256 when transfer
         if (amount0 > 0) {

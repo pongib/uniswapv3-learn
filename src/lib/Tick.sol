@@ -2,6 +2,8 @@
 
 pragma solidity ^0.8.17;
 
+import "./LiquidityMath.sol";
+
 library Tick {
     struct Info {
         bool initialized;
@@ -18,9 +20,12 @@ library Tick {
         bool upper
     ) internal returns (bool flipped) {
         Tick.Info storage tickInfo = self[tick];
+
         uint128 liquidityBefore = tickInfo.liquidityGross;
-        // TODO: Check cast type
-        uint128 liquidityAfter = liquidityBefore + uint128(liquidityDelta);
+        uint128 liquidityAfter = LiquidityMath.addLiquidity(
+            liquidityBefore,
+            liquidityDelta
+        );
 
         flipped = (liquidityAfter == 0) != (liquidityBefore == 0);
 

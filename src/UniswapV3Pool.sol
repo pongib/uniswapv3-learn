@@ -2,9 +2,12 @@
 pragma solidity ^0.8.17;
 
 import "./interfaces/IERC20.sol";
+import "./interfaces/IUniswapV3FlashCallback.sol";
 import "./interfaces/IUniswapV3MintCallback.sol";
 import "./interfaces/IUniswapV3SwapCallback.sol";
+import "./interfaces/IUniswapV3Pool.sol";
 
+import "./lib/LiquidityMath.sol";
 import "./lib/Math.sol";
 import "./lib/SwapMath.sol";
 import "./lib/Position.sol";
@@ -12,7 +15,7 @@ import "./lib/Tick.sol";
 import "./lib/TickMath.sol";
 import "./lib/TickBitmap.sol";
 
-contract UniswapV3Pool {
+contract UniswapV3Pool is IUniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
     using TickBitmap for mapping(int16 => uint256);
     using Position for mapping(bytes32 => Position.Info);
@@ -24,29 +27,22 @@ contract UniswapV3Pool {
         int24 tick;
     }
 
-    struct CallbackData {
-        address token0;
-        address token1;
-        address payer;
-    }
-
     struct SwapState {
         uint256 amountSpecifiedRemaining;
         uint256 amountCalculated;
         uint160 sqrtPriceX96;
         int24 tick;
+        uint128 liquidity;
     }
 
     struct StepState {
         int24 nextTick;
         uint160 sqrtPriceStartX96;
+        bool initialized;
         uint160 sqrtPriceNextX96;
         uint256 amountIn;
         uint256 amountOut;
     }
-
-    int24 internal constant MIN_TICK = -887272;
-    int24 internal constant MAX_TICK = -MIN_TICK;
 
     address public immutable token0;
     address public immutable token1;
@@ -86,7 +82,7 @@ contract UniswapV3Pool {
         int24 tick
     );
 
-    event Flash(address indexed sender, int256 amount0, int256 amount1);
+    event Flash(address indexed recipient, uint256 amount0, uint256 amount1);
 
     constructor(
         address token0_,
@@ -109,14 +105,14 @@ contract UniswapV3Pool {
     ) external returns (uint256 amount0, uint256 amount1) {
         if (
             lowerTick >= upperTick ||
-            lowerTick < MIN_TICK ||
-            upperTick > MAX_TICK
+            lowerTick < TickMath.MIN_TICK ||
+            upperTick > TickMath.MAX_TICK
         ) revert InvalidTickRange();
 
         if (amount == 0) revert ZeroLiquidity();
 
-        bool flippedLower = ticks.update(lowerTick, amount);
-        bool flippedUpper = ticks.update(upperTick, amount);
+        bool flippedLower = ticks.update(lowerTick, int128(amount), false);
+        bool flippedUpper = ticks.update(upperTick, int128(amount), true);
 
         if (flippedLower) {
             tickBitmap.flipTick(lowerTick, 1);
@@ -202,6 +198,7 @@ contract UniswapV3Pool {
         bytes calldata data
     ) public returns (int256 amount0, int256 amount1) {
         Slot0 memory slot0_ = slot0;
+        uint128 liquidity_ = liquidity;
 
         if (
             zeroForOne
@@ -215,7 +212,8 @@ contract UniswapV3Pool {
             amountSpecifiedRemaining: amountSpecified,
             amountCalculated: 0,
             sqrtPriceX96: slot0_.sqrtPriceX96,
-            tick: slot0_.tick
+            tick: slot0_.tick,
+            liquidity: liquidity_
         });
 
         // pools don’t fail when slippage tolerance gets hit
@@ -250,7 +248,7 @@ contract UniswapV3Pool {
                     )
                         ? sqrtPriceLimitX96
                         : step.sqrtPriceNextX96,
-                    liquidity,
+                    state.liquidity,
                     state.amountSpecifiedRemaining
                 );
 
@@ -275,11 +273,11 @@ contract UniswapV3Pool {
             }
         }
 
-        if (liquidity != state.liquidity) liquidity = state.liquidity;
-
         if (state.tick != slot0_.tick) {
             (slot0.sqrtPriceX96, slot0.tick) = (state.sqrtPriceX96, state.tick);
         }
+
+        if (liquidity != state.liquidity) liquidity = state.liquidity;
 
         (amount0, amount1) = zeroForOne
             ? (
@@ -322,7 +320,7 @@ contract UniswapV3Pool {
             amount0,
             amount1,
             slot0.sqrtPriceX96,
-            liquidity,
+            state.liquidity,
             slot0.tick
         );
     }

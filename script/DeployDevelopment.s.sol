@@ -6,13 +6,14 @@ import "forge-std/Script.sol";
 import "../src/UniswapV3Pool.sol";
 import "../src/UniswapV3Manager.sol";
 import "../test/ERC20Mintable.sol";
+import "../test/TestUtils.sol";
 
-contract DeployDevelopment is Script {
+contract DeployDevelopment is Script, TestUtils {
     function run() public {
         uint256 wethBalance = 1 ether;
         uint256 usdcBalance = 5042 ether;
-        int24 currentTick = 85176;
-        uint160 currentSqrtP = 5602277097478614198912276234240;
+        int24 currentTick = tick(5000);
+        uint160 currentSqrtP = sqrtP(5000);
 
         vm.startBroadcast();
         ERC20Mintable token0 = new ERC20Mintable("Wrapped Ether", "WETH", 18);
