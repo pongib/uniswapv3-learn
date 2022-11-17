@@ -5,6 +5,7 @@ import "./interfaces/IERC20.sol";
 import "./interfaces/IUniswapV3FlashCallback.sol";
 import "./interfaces/IUniswapV3MintCallback.sol";
 import "./interfaces/IUniswapV3SwapCallback.sol";
+import "./interfaces/IUniswapV3PoolDeployer.sol";
 import "./interfaces/IUniswapV3Pool.sol";
 
 import "./lib/LiquidityMath.sol";
@@ -15,7 +16,7 @@ import "./lib/Tick.sol";
 import "./lib/TickMath.sol";
 import "./lib/TickBitmap.sol";
 
-contract UniswapV3Pool is IUniswapV3Pool {
+contract UniswapV3Pool is IUniswapV3Pool, IUniswapV3PoolDeployer {
     using Tick for mapping(int24 => Tick.Info);
     using TickBitmap for mapping(int16 => uint256);
     using Position for mapping(bytes32 => Position.Info);
@@ -50,6 +51,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
     Slot0 public slot0;
 
     uint128 public liquidity;
+    uint24 public tickSpacing;
 
     mapping(int24 => Tick.Info) public ticks;
     mapping(int16 => uint256) public tickBitmap;
@@ -61,6 +63,7 @@ contract UniswapV3Pool is IUniswapV3Pool {
     error InsufficientInputAmount();
     error NotEnoughLiquidity();
     error InvalidPriceLimit();
+    error AlreadyInitialized();
 
     event Mint(
         address sender,
@@ -84,14 +87,16 @@ contract UniswapV3Pool is IUniswapV3Pool {
 
     event Flash(address indexed recipient, uint256 amount0, uint256 amount1);
 
-    constructor(
-        address token0_,
-        address token1_,
-        uint160 sqrtPriceX96,
-        int24 tick
-    ) {
-        token0 = token0_;
-        token1 = token1_;
+    constructor() {
+        // inversion of control, get deploy value from factory
+        (token0, token1, tickSpacing) = IUniswapV3PoolDeployer(msg.sender)
+            .parameters();
+    }
+
+    function initialize(uint160 sqrtPriceX96) public {
+        if (slot0.sqrtPriceX96 != 0) revert AlreadyInitialized();
+
+        int24 tick = TickMath.getTickAtSqrtRatio(sqrtPriceX96);
 
         slot0 = Slot0({sqrtPriceX96: sqrtPriceX96, tick: tick});
     }
