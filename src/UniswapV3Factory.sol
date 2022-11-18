@@ -16,6 +16,13 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
         public pools;
     mapping(uint24 => bool) public tickSpacings;
 
+    event PoolCreated(
+        address indexed token0,
+        address indexed token1,
+        uint24 indexed tickSpacing,
+        address pool
+    );
+
     constructor() {
         tickSpacings[10] = true;
         tickSpacings[60] = true;
@@ -47,7 +54,7 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
 
         pool = address(
             new UniswapV3Pool{
-                salt: abi.encodePacked(tokenX, tokenY, tickSpacing)
+                salt: keccak256(abi.encodePacked(tokenX, tokenY, tickSpacing))
             }()
         );
 

@@ -12,6 +12,10 @@ interface IUniswapV3Pool {
 
     function token1() external view returns (address);
 
+    function factory() external view returns (address);
+
+    function tickSpacing() external view returns (uint24);
+
     function mint(
         address owner,
         int24 lowerTick,

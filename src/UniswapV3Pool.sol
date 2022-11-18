@@ -16,7 +16,7 @@ import "./lib/Tick.sol";
 import "./lib/TickMath.sol";
 import "./lib/TickBitmap.sol";
 
-contract UniswapV3Pool is IUniswapV3Pool, IUniswapV3PoolDeployer {
+contract UniswapV3Pool is IUniswapV3Pool {
     using Tick for mapping(int24 => Tick.Info);
     using TickBitmap for mapping(int16 => uint256);
     using Position for mapping(bytes32 => Position.Info);
@@ -45,13 +45,14 @@ contract UniswapV3Pool is IUniswapV3Pool, IUniswapV3PoolDeployer {
         uint256 amountOut;
     }
 
+    address public immutable factory;
     address public immutable token0;
     address public immutable token1;
+    uint24 public immutable tickSpacing;
 
     Slot0 public slot0;
 
     uint128 public liquidity;
-    uint24 public tickSpacing;
 
     mapping(int24 => Tick.Info) public ticks;
     mapping(int16 => uint256) public tickBitmap;
@@ -89,8 +90,9 @@ contract UniswapV3Pool is IUniswapV3Pool, IUniswapV3PoolDeployer {
 
     constructor() {
         // inversion of control, get deploy value from factory
-        (token0, token1, tickSpacing) = IUniswapV3PoolDeployer(msg.sender)
-            .parameters();
+        (factory, token0, token1, tickSpacing) = IUniswapV3PoolDeployer(
+            msg.sender
+        ).parameters();
     }
 
     function initialize(uint160 sqrtPriceX96) public {
@@ -120,11 +122,11 @@ contract UniswapV3Pool is IUniswapV3Pool, IUniswapV3PoolDeployer {
         bool flippedUpper = ticks.update(upperTick, int128(amount), true);
 
         if (flippedLower) {
-            tickBitmap.flipTick(lowerTick, 1);
+            tickBitmap.flipTick(lowerTick, int24(tickSpacing));
         }
 
         if (flippedUpper) {
-            tickBitmap.flipTick(upperTick, 1);
+            tickBitmap.flipTick(upperTick, int24(tickSpacing));
         }
 
         Position.Info storage position = positions.get(
@@ -234,7 +236,7 @@ contract UniswapV3Pool is IUniswapV3Pool, IUniswapV3PoolDeployer {
 
             (step.nextTick, ) = tickBitmap.nextInitializedTickWithinOneWord(
                 state.tick,
-                1,
+                int24(tickSpacing),
                 zeroForOne
             );
 

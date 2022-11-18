@@ -8,4 +8,13 @@ interface IUniswapV3PoolDeployer {
         address token1;
         uint24 tickSpacing;
     }
+
+    function parameters()
+        external
+        returns (
+            address factory,
+            address token0,
+            address token1,
+            uint24 tickSpacing
+        );
 }

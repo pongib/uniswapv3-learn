@@ -15,12 +15,25 @@ contract UniswapV3Manager is IUniswapV3Manager {
     using Path for bytes;
 
     error SlippageCheckFailed(uint256 amount0, uint256 amount1);
+    error TooLittleReceived(uint256 amountOut);
+
+    address public immutable factory;
+
+    constructor(address factory_) {
+        factory = factory_;
+    }
 
     function mint(MintParams calldata params)
         public
         returns (uint256 amount0, uint256 amount1)
     {
-        IUniswapV3Pool pool = IUniswapV3Pool(params.poolAddress);
+        address poolAddress = PoolAddress.computeAddress(
+            factory,
+            params.tokenA,
+            params.tokenB,
+            params.tickSpacing
+        );
+        IUniswapV3Pool pool = IUniswapV3Pool(poolAddress);
 
         (uint160 sqrtPriceX96, ) = pool.slot0();
 
@@ -64,6 +77,7 @@ contract UniswapV3Manager is IUniswapV3Manager {
 
         while (true) {
             hasMultiplePools = params.path.hasMultiplePools();
+
             params.amountIn = _swap(
                 params.amountIn,
                 hasMultiplePools ? address(this) : params.recipient,
