@@ -6,7 +6,7 @@ import "./BytesLibExt.sol";
 
 import "bytes-utils/BytesLib.sol";
 
-contract Path {
+library Path {
     using BytesLib for bytes;
     using BytesLibExt for bytes;
 

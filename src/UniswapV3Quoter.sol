@@ -32,7 +32,7 @@ contract UniswapV3Quoter {
         )
     {
         bool zeroForOne = params.tokenIn < params.tokenOut;
-        IUniswapV3Pool memory pool = getPool(
+        IUniswapV3Pool pool = getPool(
             params.tokenIn,
             params.tokenOut,
             params.tickSpacing
