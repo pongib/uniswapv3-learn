@@ -50,6 +50,10 @@ contract UniswapV3Pool is IUniswapV3Pool {
     address public immutable token1;
     uint24 public immutable tickSpacing;
 
+    uint24 public immutable fee;
+    uint256 public feeGrowthGlobal0X128;
+    uint256 public feeGrowthGlobal1X128;
+
     Slot0 public slot0;
 
     uint128 public liquidity;
@@ -135,7 +139,20 @@ contract UniswapV3Pool is IUniswapV3Pool {
             upperTick
         );
 
-        position.update(amount);
+        (uint256 feeGrowthInside0X128, uint256 feeGrowthInside1X128) = ticks
+            .getFeeGrowthInside(
+                params.lowerTick,
+                params.upperTick,
+                slot0_.tick,
+                feeGrowthGlobal0X128_,
+                feeGrowthGlobal1X128_
+            );
+
+        position.update(
+            params.liquidityDelta,
+            feeGrowthInside0X128,
+            feeGrowthInside1X128
+        );
 
         Slot0 memory slot0_ = slot0;
 
@@ -197,6 +214,77 @@ contract UniswapV3Pool is IUniswapV3Pool {
         );
     }
 
+    function burn(
+        int24 lowerTick,
+        int24 upperTick,
+        uint128 amount
+    ) public returns (uint256 amount0, uint256 amount1) {
+        (
+            Position.Info storage position,
+            int256 amount0Int,
+            int256 amount1Int
+        ) = _modifyPosition(
+                ModifyPositionParams({
+                    owner: msg.sender,
+                    lowerTick: lowerTick,
+                    upperTick: upperTick,
+                    liquidityDelta: -(int128(amount))
+                })
+            );
+
+        amount0 = uint256(-amount0Int);
+        amount1 = uint256(-amount1Int);
+
+        if (amount0 > 0 || amount1 > 0) {
+            (position.tokensOwed0, position.tokensOwed1) = (
+                position.tokensOwed0 + uint128(amount0),
+                position.tokensOwed1 + uint128(amount1)
+            );
+        }
+        emit Burn(msg.sender, lowerTick, upperTick, amount, amount0, amount1);
+    }
+
+    function collect(
+        address recipient,
+        int24 lowerTick,
+        int24 upperTick,
+        uint128 amount0Requested,
+        uint128 amount1Requested
+    ) public returns (uint128 amount0, uint128 amount1) {
+        Position.Info storage position = positions.get(
+            msg.sender,
+            lowerTick,
+            upperTick
+        );
+
+        amount0 = amount0Requested > position.tokensOwed0
+            ? position.tokenOwed0
+            : amount0Requested;
+
+        amount1 = amount1Requested > position.tokensOwed1
+            ? position.tokenOwed1
+            : amount1Requested;
+
+        if (amount0 > 0) {
+            position.tokenOwed0 -= amount0;
+            IERC20(token0).transfer(recipient, amount0);
+        }
+
+        if (amount1 > 0) {
+            position.tokenOwed1 -= amount1;
+            IERC20(token1).transfer(recipient, amount1);
+        }
+
+        emit Collect(
+            msg.sender,
+            recipient,
+            lowerTIck,
+            upperTick,
+            amount0,
+            amount1
+        );
+    }
+
     function swap(
         address recipient,
         bool zeroForOne,
@@ -220,7 +308,10 @@ contract UniswapV3Pool is IUniswapV3Pool {
             amountCalculated: 0,
             sqrtPriceX96: slot0_.sqrtPriceX96,
             tick: slot0_.tick,
-            liquidity: liquidity_
+            liquidity: liquidity_,
+            feeGrowthGlobalX128: zeroForOne
+                ? feeGrowthGlobal0X128
+                : feeGrowthGlobal1X128
         });
 
         // pools don’t fail when slippage tolerance gets hit
@@ -262,8 +353,26 @@ contract UniswapV3Pool is IUniswapV3Pool {
             state.amountSpecifiedRemaining -= step.amountIn;
             state.amountCalculated += step.amountOut;
 
+            state.feeGrowthGlobalX128 += PRBMath.mulDiv(
+                step.feeAmount,
+                FixedPoint128.Q128,
+                state.liqudity
+            );
+
             if (state.sqrtPriceX96 == step.sqrtPriceNextX96) {
-                int128 liquidityDelta = ticks.cross(step.nextTick);
+                int128 liquidityDelta = ticks.cross(
+                    step.nextTick,
+                    (
+                        zeroForOne
+                            ? state.feeGrowthGlobalX128
+                            : feeGrowthGlobal0X128
+                    ),
+                    (
+                        zeroForOne
+                            ? feeGrowthGlobal1X128
+                            : state.feeGrowthGlobalX128
+                    )
+                );
 
                 if (zeroForOne) liquidityDelta = -liquidityDelta;
 
@@ -278,6 +387,12 @@ contract UniswapV3Pool is IUniswapV3Pool {
             } else {
                 state.tick = TickMath.getTickAtSqrtRatio(state.sqrtPriceX96);
             }
+        }
+
+        if (zeroForOne) {
+            feeGrowthGlobal0X128 = state.feeGrowthGlobalX128;
+        } else {
+            feeGrowthGlobal1X128 = state.feeGrowthGlobalX128;
         }
 
         if (state.tick != slot0_.tick) {
@@ -337,16 +452,23 @@ contract UniswapV3Pool is IUniswapV3Pool {
         uint256 amount1,
         bytes calldata data
     ) public {
+        uint256 fee0 = Math.mulDivRoundingUp(amount0, fee, 1e6);
+        uint256 fee1 = Math.mulDivRoundingUp(amount1, fee, 1e6);
+
         uint256 balance0Before = balance0();
         uint256 balance1Before = balance1();
 
         if (amount0 > 0) IERC20(token0).transfer(msg.sender, amount0);
         if (amount1 > 0) IERC20(token1).transfer(msg.sender, amount1);
 
-        IUniswapV3FlashCallback(msg.sender).uniswapV3FlashCallback(data);
+        IUniswapV3FlashCallback(msg.sender).uniswapV3FlashCallback(
+            fee0,
+            fee1,
+            data
+        );
 
-        require(balance0() >= balance0Before);
-        require(balance1() >= balance1Before);
+        if (balance0() < balance0Before + fee0) revert FlashLoanNotPaid();
+        if (balance1() < balance1Before + fee1) revert FlashLoanNotPaid();
 
         emit Flash(msg.sender, amount0, amount1);
     }
