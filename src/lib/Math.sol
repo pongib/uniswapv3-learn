@@ -11,7 +11,8 @@ library Math {
     function calcAmount0Delta(
         uint160 sqrtPriceAX96,
         uint160 sqrtPriceBX96,
-        uint128 liquidity
+        uint128 liquidity,
+        bool roundUp
     ) internal pure returns (uint256 amount0) {
         // prevent underflow when subtract
         if (sqrtPriceAX96 > sqrtPriceBX96) {
@@ -25,14 +26,19 @@ library Math {
         //     (liquidity * (sqrtPriceBX96 - sqrtPriceAX96)) /
         //     (sqrtPriceBX96 * sqrtPriceAX96);
 
-        amount0 = divRoundingUp(
-            mulDivRoundingUp(
-                (uint256(liquidity) << FixedPoint96.RESOLUTION),
-                (sqrtPriceBX96 - sqrtPriceAX96),
-                sqrtPriceBX96
-            ),
-            sqrtPriceAX96
-        );
+        uint256 numerator1 = uint256(liquidity) << FixedPoint96.RESOLUTION;
+        uint256 numerator2 = sqrtPriceBX96 - sqrtPriceAX96;
+
+        if (roundUp) {
+            amount0 = divRoundingUp(
+                mulDivRoundingUp(numerator1, numerator2, sqrtPriceBX96),
+                sqrtPriceAX96
+            );
+        } else {
+            amount0 =
+                PRBMath.mulDiv(numerator1, numerator2, sqrtPriceBX96) /
+                sqrtPriceAX96;
+        }
     }
 
     function calcAmount1Delta(

@@ -50,7 +50,7 @@ contract DeployDevelopment is Script, TestUtils {
             factory,
             address(weth),
             address(usdc),
-            60,
+            3000,
             5000
         );
 
@@ -58,7 +58,7 @@ contract DeployDevelopment is Script, TestUtils {
             factory,
             address(weth),
             address(uni),
-            60,
+            3000,
             10
         );
 
@@ -66,7 +66,7 @@ contract DeployDevelopment is Script, TestUtils {
             factory,
             address(wbtc),
             address(usdt),
-            60,
+            3000,
             20_000
         );
 
@@ -74,7 +74,7 @@ contract DeployDevelopment is Script, TestUtils {
             factory,
             address(usdt),
             address(usdc),
-            10,
+            500,
             1
         );
 
@@ -122,7 +122,7 @@ contract DeployDevelopment is Script, TestUtils {
                 uint160(81286379615119694729911992320), // ~1.05, int(math.sqrt(1/0.95) * 2**96)
                 1_000_000 ether,
                 1_000_000 ether,
-                10
+                500
             )
         );
 

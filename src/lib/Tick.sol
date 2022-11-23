@@ -11,6 +11,7 @@ library Tick {
         uint128 liquidityGross;
         // amount of liqudiity added or subtracted when tick is crossed
         int128 liquidityNet;
+        // fee growth on the other side of this tick (relative to the current tick)
         uint256 feeGrowthOutside0X128;
         uint256 feeGrowthOutside1X128;
     }
@@ -88,7 +89,7 @@ library Tick {
         uint256 feeGrowthBelow1X128;
 
         if (currentTick >= lowerTick_) {
-            // use current fee tracker
+            // inrange, use current fee tracker
             feeGrowthBelow0X128 = lowerTick.feeGrowthOutside0X128;
             feeGrowthBelow1X128 = lowerTick.feeGrowthOutside1X128;
         } else {

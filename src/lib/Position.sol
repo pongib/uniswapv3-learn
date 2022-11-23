@@ -5,19 +5,20 @@ pragma solidity ^0.8.17;
 import "prb-math/PRBMath.sol";
 
 import "./LiquidityMath.sol";
+import "./FixedPoint128.sol";
 
 library Position {
     struct Info {
         uint128 liquidity;
-        uint256 feeGrowthInsideLast0X128;
-        uint256 feeGrowthInsideLast1X128;
+        uint256 feeGrowthInside0LastX128;
+        uint256 feeGrowthInside1LastX128;
         uint128 tokensOwed0;
         uint128 tokensOwed1;
     }
 
     function update(
         Info storage self,
-        uint128 liquidityDelta,
+        int128 liquidityDelta,
         uint256 feeGrowthInside0X128,
         uint256 feeGrowthInside1X128
     ) internal {
@@ -26,7 +27,7 @@ library Position {
             PRBMath.mulDiv(
                 feeGrowthInside0X128 - self.feeGrowthInside0LastX128,
                 self.liquidity,
-                FiexedPoint128.Q128
+                FixedPoint128.Q128
             )
         );
 
@@ -42,8 +43,8 @@ library Position {
             self.liquidity,
             liquidityDelta
         );
-        self.feeGrowthInsideLast0X128 = feeGrowthInside0X128;
-        self.feeGrowthInsideLast1X128 = feeGrowthInside1X128;
+        self.feeGrowthInside0LastX128 = feeGrowthInside0X128;
+        self.feeGrowthInside1LastX128 = feeGrowthInside1X128;
 
         if (tokensOwed0 > 0 || tokensOwed1 > 0) {
             self.tokensOwed0 += tokensOwed0;

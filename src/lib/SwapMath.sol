@@ -16,7 +16,8 @@ library SwapMath {
         returns (
             uint160 sqrtPriceNextX96,
             uint256 amountIn,
-            uint256 amountOut
+            uint256 amountOut,
+            uint256 feeAmount
         )
     {
         uint256 amountRemainingLessFee = PRBMath.mulDiv(
@@ -31,12 +32,14 @@ library SwapMath {
             ? Math.calcAmount0Delta(
                 sqrtPriceCurrentX96,
                 sqrtPriceTargetX96,
-                liquidity
+                liquidity,
+                true
             )
             : Math.calcAmount1Delta(
                 sqrtPriceCurrentX96,
                 sqrtPriceTargetX96,
-                liquidity
+                liquidity,
+                true
             );
 
         if (amountRemainingLessFee >= amountIn) {
@@ -52,27 +55,46 @@ library SwapMath {
 
         bool max = sqrtPriceNextX96 == sqrtPriceTargetX96;
 
+        if (zeroForOne) {
+            amountIn = max
+                ? amountIn
+                : Math.calcAmount0Delta(
+                    sqrtPriceCurrentX96,
+                    sqrtPriceNextX96,
+                    liquidity,
+                    true
+                );
+
+            amountOut = Math.calcAmount1Delta(
+                sqrtPriceCurrentX96,
+                sqrtPriceNextX96,
+                liquidity,
+                false
+            );
+        } else {
+            amountIn = max
+                ? amountIn
+                : Math.calcAmount1Delta(
+                    sqrtPriceCurrentX96,
+                    sqrtPriceNextX96,
+                    liquidity,
+                    true
+                );
+
+            amountOut = Math.calcAmount0Delta(
+                sqrtPriceCurrentX96,
+                sqrtPriceNextX96,
+                liquidity,
+                false
+            );
+        }
+
         if (!max) {
             //  the current price range has enough liquidity to fulfill the swap
+            // TODO: test with console.log here!
             feeAmount = amountRemaining - amountIn;
         } else {
             feeAmount = Math.mulDivRoundingUp(amountIn, fee, 1e6 - fee);
-        }
-
-        amountIn = Math.calcAmount0Delta(
-            sqrtPriceCurrentX96,
-            sqrtPriceNextX96,
-            liquidity
-        );
-
-        amountOut = Math.calcAmount1Delta(
-            sqrtPriceCurrentX96,
-            sqrtPriceNextX96,
-            liquidity
-        );
-
-        if (!zeroForOne) {
-            (amountIn, amountOut) = (amountOut, amountIn);
         }
     }
 }

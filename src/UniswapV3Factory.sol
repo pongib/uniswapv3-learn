@@ -7,20 +7,19 @@ import "./UniswapV3Pool.sol";
 
 contract UniswapV3Factory is IUniswapV3PoolDeployer {
     error TokensMustBeDifferent();
-    error UnsupportedTickSpacing();
+    error UnsupportedFee();
     error TokenXCannotBeZero();
     error PoolAlreadyExist();
 
     PoolParameters public parameters;
     mapping(address => mapping(address => mapping(uint24 => address)))
         public pools;
-    mapping(uint24 => bool) public tickSpacings;
     mapping(uint24 => uint24) public fees;
 
     event PoolCreated(
         address indexed token0,
         address indexed token1,
-        uint24 indexed tickSpacing,
+        uint24 indexed fee,
         address pool
     );
 
@@ -35,15 +34,14 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
         uint24 fee
     ) public returns (address pool) {
         if (tokenX == tokenY) revert TokensMustBeDifferent();
-        if (!tickSpacings[tickSpacing]) revert UnsupportedTickSpacing();
+        if (fees[fee] == 0) revert UnsupportedFee();
 
         (tokenX, tokenY) = tokenX < tokenY
             ? (tokenX, tokenY)
             : (tokenY, tokenX);
 
         if (tokenX == address(0)) revert TokenXCannotBeZero();
-        if (pools[tokenX][tokenY][tickSpacing] != address(0))
-            revert PoolAlreadyExist();
+        if (pools[tokenX][tokenY][fee] != address(0)) revert PoolAlreadyExist();
 
         parameters = PoolParameters({
             factory: msg.sender,
@@ -55,15 +53,15 @@ contract UniswapV3Factory is IUniswapV3PoolDeployer {
 
         pool = address(
             new UniswapV3Pool{
-                salt: keccak256(abi.encodePacked(tokenX, tokenY, tickSpacing))
+                salt: keccak256(abi.encodePacked(tokenX, tokenY, fee))
             }()
         );
 
         delete parameters;
 
-        pools[tokenX][tokenY][tickSpacing] = pool;
-        pools[tokenY][tokenX][tickSpacing] = pool;
+        pools[tokenX][tokenY][fee] = pool;
+        pools[tokenY][tokenX][fee] = pool;
 
-        emit PoolCreated(tokenX, tokenY, tickSpacing, pool);
+        emit PoolCreated(tokenX, tokenY, fee, pool);
     }
 }

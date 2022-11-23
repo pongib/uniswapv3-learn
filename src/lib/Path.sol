@@ -11,10 +11,10 @@ library Path {
     using BytesLibExt for bytes;
 
     uint256 private constant ADDR_SIZE = 20;
-    uint256 private constant TICKSPACING_SIZE = 3;
+    uint256 private constant FEE_SIZE = 3;
 
-    uint256 private constant NEXT_OFFSET = ADDR_SIZE + TICKSPACING_SIZE;
-    /// @dev The offset of a single token address + tick spacing
+    uint256 private constant NEXT_OFFSET = ADDR_SIZE + FEE_SIZE;
+    /// @dev The offset of a single token address + fee
     uint256 private constant POP_OFFSET = NEXT_OFFSET + ADDR_SIZE;
     // The minimum length of a path that contains 2 or more pools;
     uint256 private constant MULTIPLE_POOLS_MIN_LENGTH =
@@ -46,11 +46,11 @@ library Path {
         returns (
             address tokenIn,
             address tokenOut,
-            uint24 tickSpacing
+            uint24 fee
         )
     {
         tokenIn = path.toAddress(0);
         tokenOut = path.toAddress(NEXT_OFFSET);
-        tickSpacing = path.toUint24(ADDR_SIZE);
+        fee = path.toUint24(ADDR_SIZE);
     }
 }

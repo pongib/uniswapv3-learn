@@ -24,7 +24,16 @@ interface IUniswapV3Pool {
         bytes calldata data
     ) external returns (uint256 amount0, uint256 amount1);
 
-    function slot0() external view returns (uint160 sqrtPriceX96, int24 tick);
+    function slot0()
+        external
+        view
+        returns (
+            uint160 sqrtPriceX96,
+            int24 tick,
+            uint16 observationIndex,
+            uint16 observationCardinality,
+            uint16 observationCardinalityNext
+        );
 
     function swap(
         address recipient,
@@ -33,4 +42,17 @@ interface IUniswapV3Pool {
         uint160 sqrtPriceLimitX96,
         bytes calldata data
     ) external returns (int256, int256);
+
+    function fee() external view returns (uint24);
+
+    function positions(bytes32 key)
+        external
+        view
+        returns (
+            uint128 liquidity,
+            uint256 feeGrowthInside0LastX128,
+            uint256 feeGrowthInside1LastX128,
+            uint128 tokensOwed0,
+            uint128 tokensOwed1
+        );
 }
