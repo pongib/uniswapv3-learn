@@ -2,6 +2,12 @@
 
 pragma solidity ^0.8.17;
 
+import "openzeppelin/utils/Base64.sol";
+import "openzeppelin/utils/Strings.sol";
+
+import "../interfaces/IERC20.sol";
+import "../interfaces/IUniswapV3Pool.sol";
+
 library NFTRenderer {
     struct RenderParams {
         address pool;

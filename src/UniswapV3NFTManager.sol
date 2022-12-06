@@ -1,9 +1,22 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.17;
 
 import "solmate/tokens/ERC721.sol";
 
+import "./interfaces/IERC20.sol";
+import "./interfaces/IUniswapV3Pool.sol";
+import "./lib/LiquidityMath.sol";
+import "./lib/NFTRenderer.sol";
+import "./lib/PoolAddress.sol";
+import "./lib/TickMath.sol";
+
 contract UniswapV3NFTManager is ERC721 {
+    error NotAuthorized();
+    error NotEnoughLiquidity();
+    error PositionNotCleared();
+    error SlippageCheckFailed(uint256 amount0, uint256 amount1);
+    error WrongToken();
+
     struct TokenPosition {
         address pool;
         int24 lowerTick;
@@ -34,9 +47,46 @@ contract UniswapV3NFTManager is ERC721 {
         uint128 liquidity;
     }
 
-    mapping(uint256 => TokenPosition) public positions;
+    struct AddLiquidityInternalParams {
+        IUniswapV3Pool pool;
+        int24 lowerTick;
+        int24 upperTick;
+        uint256 amount0Desired;
+        uint256 amount1Desired;
+        uint256 amount0Min;
+        uint256 amount1Min;
+    }
+
+    event AddLiquidity(
+        uint256 indexed tokenId,
+        uint128 liquidity,
+        uint256 amount0,
+        uint256 amount1
+    );
+
+    event RemoveLiquidity(
+        uint256 indexed tokenId,
+        uint128 liquidity,
+        uint256 amount0,
+        uint256 amount1
+    );
+
+    uint256 public totalSupply;
+    uint256 private nextTokenId;
 
     address public immutable factory;
+    mapping(uint256 => TokenPosition) public positions;
+
+    modifier isApprovedOrOwner(uint256 tokenId) {
+        address owner = ownerOf(tokenId);
+        if (
+            msg.sender != owner ||
+            !isApprovedForAll[owner][msg.sender] ||
+            getApproved[tokenId] != msg.sender
+        ) revert NotAuthorized();
+
+        _;
+    }
 
     constructor(address factoryAddress)
         ERC721("UniswapV3 NFT Positions", "UNIV3")
@@ -50,7 +100,20 @@ contract UniswapV3NFTManager is ERC721 {
         override
         returns (string memory)
     {
-        return "";
+        TokenPosition memory tokenPosition = positions[tokenId];
+        if (tokenPosition.pool == address(0)) revert WrongToken();
+        IUniswapV3Pool pool = IUniswapV3Pool(tokenPosition.pool);
+
+        return
+            NFTRenderer.render(
+                NFTRenderer.RenderParams({
+                    pool: tokenPosition.pool,
+                    owner: address(this),
+                    lowerTick: tokenPosition.lowerTick,
+                    upperTick: tokenPosition.upperTick,
+                    fee: pool.fee()
+                })
+            );
     }
 
     function mint(MintParams calldata params) public returns (uint256 tokenId) {
@@ -79,6 +142,8 @@ contract UniswapV3NFTManager is ERC721 {
         });
 
         positions[tokenId] = tokenPosition;
+
+        emit AddLiquidity(tokenId, liquidity, amount0, amount1);
     }
 
     function addLiquidity(AddLiquidityParams calldata params)
@@ -103,6 +168,8 @@ contract UniswapV3NFTManager is ERC721 {
                 amount1Min: params.maount1Min
             })
         );
+
+        emit AddLiquidity(params.tokenId, liquidity, amount0, amount1);
     }
 
     function removeLiquidity(RemoveLiquidityParams memory params)
@@ -124,6 +191,13 @@ contract UniswapV3NFTManager is ERC721 {
             tokenPosition.lowerTick,
             tokenPosition.upperTick,
             params.liquidity
+        );
+
+        emit RemoveLiquidity(
+            params.tokenId,
+            params.liquidity,
+            amount0,
+            amount1
         );
     }
 
@@ -159,5 +233,82 @@ contract UniswapV3NFTManager is ERC721 {
         delete positions[tokenId];
         _burn(tokenId);
         totalSupply--;
+    }
+
+    function uniswapV3MintCallback(
+        uint256 amount0,
+        uint256 amount1,
+        bytes calldata data
+    ) public {
+        IUniswapV3Pool.CallbackData memory extra = abi.decode(
+            data,
+            (IUniswapV3Pool.CallbackData)
+        );
+
+        IERC20(extra.token0).transferFrom(extra.payer, msg.sender, amount0);
+        IERC20(extra.token1).transferFrom(extra.payer, msg.sender, amount1);
+    }
+
+    function _addLiquidity(AddLiquidityInternalParams memory params)
+        internal
+        returns (
+            uint128 liquidity,
+            uint256 amount0,
+            uint256 amount1
+        )
+    {
+        (uint160 sqrtPriceX96, , , , ) = params.pool.slot0();
+
+        liquidity = LiquidityMath.getLiquidityForAmounts(
+            sqrtPriceX96,
+            TickMath.getSqrtRatioAtTick(params.lowerTick),
+            TickMath.getSqrtRatioAtTick(params.upperTick),
+            params.amount0Desired,
+            params.amount1Desired
+        );
+
+        (amount0, amount1) = params.pool.mint(
+            address(this),
+            params.lowerTick,
+            params.upperTick,
+            liquidity,
+            abi.encode(
+                IUniswapV3Pool.CallbackData({
+                    token0: params.pool.token0(),
+                    token1: params.pool.token1(),
+                    payer: msg.sender
+                })
+            )
+        );
+
+        if (amount0 < params.amount0Min || amount1 < params.amount1Min)
+            revert SlippageCheckFailed(amount0, amount1);
+    }
+
+    function getPool(
+        address token0,
+        address token1,
+        uint24 fee
+    ) internal view returns (IUniswapV3Pool pool) {
+        (token0, token1) = token0 < token1
+            ? (token0, token1)
+            : (token1, token0);
+        pool = IUniswapV3Pool(
+            PoolAddress.computeAddress(factory, token0, token1, fee)
+        );
+    }
+
+    function poolPositionKey(TokenPosition memory position)
+        internal
+        view
+        returns (bytes32 key)
+    {
+        key = keccak256(
+            abi.encodePacked(
+                address(this),
+                position.lowerTick,
+                position.upperTick
+            )
+        );
     }
 }
