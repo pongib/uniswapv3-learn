@@ -5,6 +5,7 @@ pragma solidity ^0.8.17;
 import "./FixedPoint96.sol";
 import "prb-math/PRBMath.sol";
 
+// TODO: Math rounding in milestone 5
 library Math {
     error PriceX96LessThanOrEqualZero();
 
